@@ -1,10 +1,11 @@
-import pygame
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from collections import deque
 import random
+
+from env import PendulumEnv
 
 
 class QNetwork(nn.Module):
@@ -36,79 +37,9 @@ class ReplayBuffer:
         return len(self.buffer)
 
 
-class Env:
-    SCREEN_WIDTH = 800
-    SCREEN_HEIGHT = 600
-    FPS = 60
-    DT = 1 / FPS
-    SCALE = 200
-
-    G = 9.81
-    L = 1
-
-    def __init__(self, render_mode=None):
-        self.render_mode = render_mode
-        self.screen_size = (self.SCREEN_WIDTH, self.SCREEN_HEIGHT)
-
-        # theta, theta_dot, x, x_dot
-        self.state = np.zeros(4)
-        self.done = False
-
-        # Define action space and observation space
-        self.action_space = 3
-        self.observation_space = (4,)  # Full state: theta, theta_dot, x, x_dot
-
-        # Pygame setup
-        if render_mode == "human":
-            pygame.init()
-            self.screen = pygame.display.set_mode(self.screen_size)
-            pygame.display.set_caption("Pendulum Balancer")
-            self.clock = pygame.time.Clock()
-
-    def reset(self):
-        # Initialize state and reset flags
-        self.state = np.zeros(4)
-        self.done = False
-        return self.state, 0
-
-    def step(self, action):
-        # Action logic
-        x_dot_dot = (action - 1) * 10
-        self.state[1] += (-3 / self.L * np.cos(self.state[0]) * x_dot_dot -
-                          3 * self.G / 2 / self.L * np.sin(self.state[0])) * self.DT
-        self.state[0] += self.state[1] * self.DT
-        self.state[3] += x_dot_dot * self.DT
-        self.state[2] += self.state[3] * self.DT
-
-        self.state[0] = (self.state[0] + np.pi) % (2 * np.pi) - np.pi
-
-        self.done = np.abs(
-            self.state[2]) > self.SCREEN_WIDTH // self.SCALE // 2
-
-        reward = 1 - np.cos(self.state[0])
-
-        if self.render_mode == "human":
-            self.render()
-
-        return self.state, reward, self.done, {}, 0
-
-    def render(self):
-        self.screen.fill((255, 255, 255))
-        x1 = self.SCREEN_WIDTH // 2 + self.SCALE * self.state[2]
-        x2 = x1 + self.SCALE * self.L * np.sin(self.state[0])
-        y1 = self.SCREEN_HEIGHT // 2
-        y2 = self.SCREEN_HEIGHT // 2 + self.SCALE * self.L * np.cos(self.state[0])
-        pygame.draw.line(self.screen, (0, 0, 0),
-                         (x1, y1), (x2, y2), 5)
-        pygame.display.flip()
-        self.clock.tick(self.FPS)
-
-    def close(self):
-        if self.render_mode == "human":
-            pygame.quit()
 
 
-def deep_q_learning(env, device, episodes=1000, gamma=0.99, lr=1e-3, batch_size=64, buffer_capacity=10000):
+def deep_q_learning(env, device, episodes=500, gamma=0.99, lr=1e-3, batch_size=64, buffer_capacity=10000):
     state_dim = env.observation_space[0]
     action_dim = env.action_space
 
@@ -121,7 +52,7 @@ def deep_q_learning(env, device, episodes=1000, gamma=0.99, lr=1e-3, batch_size=
     buffer = ReplayBuffer(buffer_capacity)
 
     epsilon = 1.0
-    epsilon_decay = 0.995
+    epsilon_decay = 0.978
     epsilon_min = 0.01
 
     for episode in range(episodes):
@@ -180,12 +111,34 @@ def deep_q_learning(env, device, episodes=1000, gamma=0.99, lr=1e-3, batch_size=
         target_net.load_state_dict(q_net.state_dict())
 
         print(f"Episode {episode + 1}: Total Reward = {total_reward}")
+    
+    if not env.do_render:
+        env.do_render = True
+        env.render_setup()
 
-    env.close()
+    state, _ = env.reset()
+    state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
+    total_reward = 0
+
+    q_net.eval()
+    while True:
+        with torch.no_grad():
+            action = torch.argmax(q_net(state)).item()
+
+        next_state, reward, done, _, _ = env.step(action)
+        next_state = torch.tensor(next_state, dtype=torch.float32).unsqueeze(0).to(device)
+        state = next_state
+        total_reward += reward
+
+        if done:
+            state, _ = env.reset()
+            state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
+            print(f"Total Reward = {total_reward}")
+            total_reward = 0
 
 
 if __name__ == "__main__":
-    env = Env(render_mode="human")
+    env = PendulumEnv(do_render=True)
     device = torch.device(
         "mps") if torch.backends.mps.is_available() else torch.device("cpu")
     print(f"Using device: {device}")
