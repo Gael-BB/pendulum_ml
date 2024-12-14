@@ -1,5 +1,5 @@
 # Introduction
-The aim of this project is to use deep q learning to teach a cart to balance a pendulum by accelerating back and forward. As it will be one of my 3rd year projects at the end of the year, I decided to get started early by experimenting on my own.
+The aim of this project is to use deep q learning to teach a cart to balance a pendulum by accelerating back and forward. As it will be one of my 3rd year projects, I decided to get started early by experimenting on my own.
 
 # Description
 Inverted pendulum standing on a cart. Pendulum has mass $m$, length $l$, and angle to the downward vertical $\theta$. Cart has mass $M$, and horizontal displacement $x$.
